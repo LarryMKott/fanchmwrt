@@ -49,7 +49,15 @@ jobs:
           make defconfig
 
       - name: Build image
-        run: make -j$(nproc)
+        run: |
+          set +e
+          make -j$(nproc)
+          rc=$?
+          if [ $rc -ne 0 ]; then
+            echo "::error::make failed (exit $rc). Re-running failed target with V=s to capture the real error."
+            make -j1 V=s 2>&1 | tee /tmp/vs.log | tail -150
+            exit $rc
+          fi
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
