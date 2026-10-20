@@ -48,6 +48,16 @@ jobs:
           EOF
           make defconfig
 
+      - name: Fill kernel 6.12 config defaults
+        run: |
+          # config-6.12 is a straight copy of config-6.6 and therefore misses
+          # every symbol added in 6.12 (e.g. PTDUMP_STAGE2_DEBUGFS). OpenWrt's
+          # Kernel/Configure does NOT run olddefconfig, so those show up as
+          # interactive (NEW) prompts and syncconfig aborts in a non-tty CI.
+          # Seed them from the kernel Kconfig defaults; kernel_oldconfig also
+          # writes the diff back into the subtarget config-6.12.
+          yes "" | make kernel_oldconfig
+
       - name: Build image
         run: |
           set +e
