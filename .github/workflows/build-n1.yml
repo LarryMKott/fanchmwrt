@@ -33,18 +33,19 @@ jobs:
 
       - name: Configure for Phicomm N1
         run: |
-          make defconfig
-          # Start from a minimal config then enable amlogic/mesongx/phicomm_n1
-          echo "CONFIG_TARGET_amlogic=y" >> .config
-          echo "CONFIG_TARGET_amlogic_mesongx=y" >> .config
-          echo "CONFIG_TARGET_amlogic_mesongx_DEVICE_phicomm_n1=y" >> .config
-          echo "CONFIG_KERNEL_KALLSYMS=y" >> .config
-          scripts/config --file .config \
-            -e CONFIG_TARGET_amlogic \
-            -e CONFIG_TARGET_amlogic_mesongx \
-            -e CONFIG_TARGET_amlogic_mesongx_DEVICE_phicomm_n1 \
-            -e CONFIG_PACKAGE_luci \
-            -e CONFIG_LUCI_LANG_zh_Hans
+          # NOTE: OpenWrt ships scripts/config as a *directory* (kconfig sources),
+          # not the Linux-kernel `scripts/config` helper. Write .config directly
+          # and let `make defconfig` resolve dependencies.
+          rm -f .config
+          cat > .config <<'EOF'
+          CONFIG_TARGET_amlogic=y
+          CONFIG_TARGET_amlogic_mesongx=y
+          CONFIG_TARGET_amlogic_mesongx_DEVICE_phicomm_n1=y
+          CONFIG_TARGET_MULTI_PROFILE=y
+          CONFIG_PACKAGE_luci=y
+          CONFIG_LUCI_LANG_zh_Hans=y
+          CONFIG_KERNEL_KALLSYMS=y
+          EOF
           make defconfig
 
       - name: Build image
