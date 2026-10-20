@@ -11,7 +11,7 @@ FEATURES:=boot-part ext4 audio usb fpu legacy-sdcard squashfs usbgadget display 
 SUBTARGETS:=meson8b mesongx
 
 KERNEL_PATCHVER:=6.12
-KERNEL_TESTING_PATCHVER:=6.6
+KERNEL_TESTING_PATCHVER:=6.12
 
 define Target/Description
 	Build firmware image for Amlogic Meson SoC devices.
@@ -23,10 +23,10 @@ include $(INCLUDE_DIR)/target.mk
 DEFAULT_PACKAGES += \
 	e2fsprogs \
 	mkf2fs \
-	automount \
+	block-mount \
 	resize2fs \
 	partx-utils \
-	losetup htop autocore-arm
+	losetup htop
 
 KERNELNAME:=Image dtbs
 
