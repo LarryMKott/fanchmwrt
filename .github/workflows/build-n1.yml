@@ -47,36 +47,34 @@ jobs:
           EOF
           make defconfig
 
-      - name: Fill kernel 6.12 config defaults
-        run: |
-          # config-6.12 is a straight copy of config-6.6 and therefore misses
-          # every symbol added in 6.12. `kernel_oldconfig` fills most of them
-          # but cannot answer choice-type NEW prompts (e.g.
-          # TRANSPARENT_HUGEPAGE_NEVER asks choice[1-3?] and an empty line is
-          # invalid). `olddefconfig` takes the Kconfig defaults non-interactively.
-          # `yes ""` feeds an infinite stream of empty lines; some choice-type
-          # NEW prompts reject an empty line and oldconfig then blocks forever
-          # (run 39505405172 hung 80+ minutes here). Without the pipe, oldconfig
-          # hits EOF on a non-tty and exits quickly; `timeout` is the hard stop.
-          # The kernel tree is prepared as a side effect, so the non-interactive
-          # olddefconfig below can fill the real defaults.
-          timeout 1500 make kernel_oldconfig || true
-          LINUX_DIR=$(ls -d build_dir/target-*/linux-amlogic_mesongx/linux-* 2>/dev/null | head -1)
-          echo "LINUX_DIR=$LINUX_DIR"
-          make -C "$LINUX_DIR" ARCH=arm64 olddefconfig
-          # Persist the filled config back into the subtarget file, keeping only
-          # config lines and dropping entries OpenWrt injects at build time.
-          grep -E '^(CONFIG_|# CONFIG_)' "$LINUX_DIR/.config" \
-            | grep -vE '^(# )?CONFIG_(KERNEL_|INITRAMFS)' \
-            > target/linux/amlogic/mesongx/config-6.12
-
       - name: Build image
         run: |
           set +e
+          # config-6.12 was copied from config-6.6 and misses 6.12-new symbols,
+          # so the kernel's syncconfig aborts on a non-tty (NEW) prompt in the
+          # first build. A pre-build `make kernel_oldconfig` is NOT viable: it
+          # drags in the whole toolchain and times out before the kernel tree
+          # exists (LINUX_DIR empty). Instead let the normal build reach the
+          # syncconfig failure -- by then the kernel tree IS prepared and
+          # LINUX_DIR/.config exists -- then fill defaults with olddefconfig.
           make -j$(nproc)
           rc=$?
           if [ $rc -ne 0 ]; then
-            echo "::error::make failed (exit $rc). Re-running failed target with V=s to capture the real error."
+            LINUX_DIR=$(ls -d build_dir/target-*/linux-amlogic_mesongx/linux-* 2>/dev/null | head -1)
+            echo "::notice::first build rc=$rc, LINUX_DIR=$LINUX_DIR"
+            if [ -n "$LINUX_DIR" ] && [ -f "$LINUX_DIR/.config" ]; then
+              echo "::notice::filling 6.12 NEW symbols with olddefconfig"
+              make -C "$LINUX_DIR" ARCH=arm64 olddefconfig || { echo "::error::olddefconfig failed"; exit $rc; }
+              grep -E '^(CONFIG_|# CONFIG_)' "$LINUX_DIR/.config" \
+                | grep -vE '^(# )?CONFIG_(KERNEL_|INITRAMFS)' \
+                > target/linux/amlogic/mesongx/config-6.12
+              echo "::notice::retrying build with normalized kernel config"
+              make -j$(nproc)
+              rc=$?
+            fi
+          fi
+          if [ $rc -ne 0 ]; then
+            echo "::error::make failed (exit $rc). Re-running with V=s."
             make -j1 V=s 2>&1 | tee /tmp/vs.log | tail -150
             exit $rc
           fi
