@@ -54,7 +54,13 @@ jobs:
           # but cannot answer choice-type NEW prompts (e.g.
           # TRANSPARENT_HUGEPAGE_NEVER asks choice[1-3?] and an empty line is
           # invalid). `olddefconfig` takes the Kconfig defaults non-interactively.
-          yes "" | make kernel_oldconfig || true
+          # `yes ""` feeds an infinite stream of empty lines; some choice-type
+          # NEW prompts reject an empty line and oldconfig then blocks forever
+          # (run 39505405172 hung 80+ minutes here). Without the pipe, oldconfig
+          # hits EOF on a non-tty and exits quickly; `timeout` is the hard stop.
+          # The kernel tree is prepared as a side effect, so the non-interactive
+          # olddefconfig below can fill the real defaults.
+          timeout 1500 make kernel_oldconfig || true
           LINUX_DIR=$(ls -d build_dir/target-*/linux-amlogic_mesongx/linux-* 2>/dev/null | head -1)
           echo "LINUX_DIR=$LINUX_DIR"
           make -C "$LINUX_DIR" ARCH=arm64 olddefconfig
