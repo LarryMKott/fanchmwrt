@@ -78,13 +78,13 @@ jobs:
             echo "::notice::first build rc=$rc, LINUX_DIR=$LINUX_DIR"
             if [ -n "$LINUX_DIR" ] && [ -f "$LINUX_DIR/.config" ]; then
               echo "::notice::filling 6.12 NEW symbols with olddefconfig"
-              make -C "$LINUX_DIR" ARCH=arm64 olddefconfig || { echo "::error::olddefconfig failed"; exit $rc; }
-    # Second pass: ARM64_PTR_AUTH_KERNEL is gated on ARM64_PTR_AUTH; one pass
-    # processes the dependent symbol before the dependency settles and drops
-    # it again. Re-run now that ARM64_PTR_AUTH=y is fixed in the .config.
-    make -C "$LINUX_DIR" ARCH=arm64 olddefconfig || true
-    grep -q '^CONFIG_ARM64_PTR_AUTH_KERNEL=' "$LINUX_DIR/.config" \
-      || echo 'CONFIG_ARM64_PTR_AUTH_KERNEL=y' >> "$LINUX_DIR/.config"
+                        make -C "$LINUX_DIR" ARCH=arm64 olddefconfig || { echo "::error::olddefconfig failed"; exit $rc; }
+              # Second pass: ARM64_PTR_AUTH_KERNEL is gated on ARM64_PTR_AUTH;
+              # one pass processes the dependent symbol before the dependency
+              # settles and drops it again. Re-run now that ARM64_PTR_AUTH=y.
+              make -C "$LINUX_DIR" ARCH=arm64 olddefconfig || true
+              grep -q '^CONFIG_ARM64_PTR_AUTH_KERNEL=' "$LINUX_DIR/.config" \
+                || echo 'CONFIG_ARM64_PTR_AUTH_KERNEL=y' >> "$LINUX_DIR/.config"
               echo "::notice::diagnostics: ARM64_PTR_AUTH in filled .config:"
               grep "ARM64_PTR_AUTH" "$LINUX_DIR/.config" || echo "(none)"
               grep -E '^(CONFIG_|# CONFIG_)' "$LINUX_DIR/.config" \
