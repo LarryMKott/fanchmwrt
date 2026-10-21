@@ -11,7 +11,9 @@ FEATURES:=boot-part ext4 audio usb fpu legacy-sdcard squashfs usbgadget display 
 SUBTARGETS:=meson8b mesongx
 
 KERNEL_PATCHVER:=6.12
-KERNEL_TESTING_PATCHVER:=6.12
+# 6.18 LTS is the testing line: default build stays 6.12; setting
+# CONFIG_TESTING_KERNEL=y in .config switches to 6.18 (patches-6.18/config-6.18).
+KERNEL_TESTING_PATCHVER:=6.18
 
 define Target/Description
 	Build firmware image for Amlogic Meson SoC devices.
