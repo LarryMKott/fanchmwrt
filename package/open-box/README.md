@@ -42,6 +42,10 @@ panel ~30 MiB）。N1 默认 rootfs 只有 104 MiB，装不下 ——
 并在 `make defconfig` 之后校验这两个符号没有被打回默认值。N1 是 8 GiB eMMC，1 GiB rootfs
 顺带给 Open-Box 自己的升级留了空间（每次下载完整发布包约 76 MiB）。
 
+**刷机请用 `ext4` 那个镜像**（`*ext4-sysupgrade.img.gz`）。Open-Box 要往
+`/opt/open-box/data` 写库和端口文件，面板服务启动时还会往 `/www` 补 LuCI 文件；
+squashfs 镜像没有独立的 `rootfs_data` 分区，写不进去。
+
 ## 升级 Open-Box
 
 改两行，重新打包镜像：

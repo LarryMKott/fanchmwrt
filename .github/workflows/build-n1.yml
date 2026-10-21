@@ -105,6 +105,12 @@ jobs:
           CONFIG_KERNEL_ARM64_PTR_AUTH_KERNEL=y
           EOF
           make defconfig
+          # Fail fast instead of failing hours later inside mkfs.ext4: if either
+          # symbol is silently dropped, Open-Box (~168 MiB) overflows the image.
+          grep -q '^CONFIG_PACKAGE_open-box=y$' .config \
+            || { echo "::error::package/open-box was not selected"; exit 1; }
+          grep -q '^CONFIG_TARGET_ROOTFS_PARTSIZE=1024$' .config \
+            || { echo "::error::rootfs partition size did not apply"; exit 1; }
           # generic/config-6.12 ships "# CONFIG_ARM64_PTR_AUTH is not set".
           # If that value survives the kernel config merge, syncconfig
           # re-asks ARM64_PTR_AUTH and ARM64_PTR_AUTH_KERNEL becomes a NEW
