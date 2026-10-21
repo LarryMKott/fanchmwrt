@@ -128,7 +128,7 @@ define Host/Elfutils/FixObstack
 endef
 
 Hooks/HostConfigure/Pre := Host/Gnulib/Prepare Host/Elfutils/FixObstack $(Hooks/HostConfigure/Pre)
-Hooks/HostCompile/Pre := Host/Gnulib/Compile $(Hooks/HostCompile/Pre)
+Hooks/HostCompile/Pre := Host/Elfutils/FixObstack Host/Gnulib/Compile $(Hooks/HostCompile/Pre)
 
 define Host/Configure
 	$(call Host/Configure/Default)
