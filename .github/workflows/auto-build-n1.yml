@@ -1,9 +1,16 @@
 # Watch the upstream repo and rebuild the Phicomm N1 firmware when it moves.
 # Author: 咖啡有毒你还喝！
 #
-# Flow: check upstream HEAD -> if a release for that commit does not exist yet,
-# merge upstream into our ported branch, then call build-n1.yml which builds the
-# N1 image and publishes a pre-release tagged n1-<YYYYMMDD>-<short sha>.
+# Version-scoped by design: today only the 25.12 series is built. To extend to
+# another release series later, add one line to N1_VERSIONS below and make sure
+# the matching ported branch exists. Everything else (upstream check, dedup,
+# merge, build, release) is already series-agnostic.
+#
+# Flow: for every configured "<series>|<branch>":
+#   1. read upstream HEAD of that branch
+#   2. skip when a release for that exact upstream commit already exists
+#   3. otherwise merge upstream into the ported branch and build it
+#   4. publish a pre-release tagged n1-<series>-<YYYYMMDD>-<short sha>
 name: Auto-build N1 on upstream update
 
 on:
@@ -11,6 +18,11 @@ on:
     # Every day at 18:00 UTC = 02:00 Asia/Shanghai
     - cron: "0 18 * * *"
   workflow_dispatch:
+    inputs:
+      series:
+        description: "Only build this series (empty = all configured)"
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -19,71 +31,77 @@ concurrency:
   group: n1-auto-build
   cancel-in-progress: false
 
+env:
+  # ---- Version matrix: one line per OpenWrt series you have ported. ----
+  # Format: "<series>|<ported branch>"
+  # Only 25.12 for now; future versions are added here, nowhere else.
+  N1_VERSIONS: |
+    25.12|fanchmwrt-25.12.6
+
 jobs:
-  sync:
-    name: Sync upstream and decide
+  plan:
+    name: Plan builds
     runs-on: ubuntu-latest
     outputs:
-      changed: ${{ steps.decide.outputs.changed }}
-      tag: ${{ steps.decide.outputs.tag }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+      count: ${{ steps.plan.outputs.count }}
     steps:
-      - name: Checkout ported branch
-        uses: actions/checkout@v6
-        with:
-          ref: fanchmwrt-25.12.6
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Fetch upstream
-        run: |
-          set -euo pipefail
-          git remote add upstream https://github.com/fanchmwrt/fanchmwrt.git 2>/dev/null || true
-          git fetch --no-tags upstream fanchmwrt-25.12.6
-
-      - name: Decide, merge upstream, and emit build tag
-        id: decide
+      - name: Decide which series need a build
+        id: plan
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ONLY_SERIES: ${{ inputs.series }}
         run: |
           set -euo pipefail
-          sha=$(git rev-parse upstream/fanchmwrt-25.12.6)
-          short=${sha:0:8}
-          date=$(date -u +%Y%m%d)
-          tag="n1-$date-$short"
-          echo "upstream HEAD = $sha (short $short), candidate tag = $tag"
+          matrix='[]'
+          count=0
 
-          # Skip only when a release for this exact upstream commit already exists.
-          # A failed build leaves no release, so the next run retries it.
-          if gh release list --repo "$GITHUB_REPOSITORY" --limit 100 \
-               --json tagName --jq '.[].tagName' \
-             | grep -q -- "-$short\$"; then
-            echo "already released for $short -> nothing to do"
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          # Bring our ported branch up to the upstream commit when needed.
-          if git merge-base --is-ancestor "$sha" HEAD; then
-            echo "upstream already merged; rebuilding (previous build likely failed)"
-          else
-            echo "merging upstream $sha into fanchmwrt-25.12.6"
-            git config user.name "咖啡有毒你还喝！"
-            git config user.email "noreply@github.com"
-            if ! git merge --no-edit "$sha"; then
-              echo "::error::merge conflict while syncing upstream — manual resolution required"
-              exit 1
+          while IFS='|' read -r series branch; do
+            series="$(echo "${series:-}" | xargs)"
+            branch="$(echo "${branch:-}" | xargs)"
+            [ -z "$series" ] && continue
+            [ -z "$branch" ] && continue
+            if [ -n "${ONLY_SERIES:-}" ] && [ "$series" != "$ONLY_SERIES" ]; then
+              echo "skip $series: filtered out by input"
+              continue
             fi
-            git push origin HEAD:fanchmwrt-25.12.6
-          fi
 
-          echo "changed=true" >> "$GITHUB_OUTPUT"
-          echo "tag=$tag"      >> "$GITHUB_OUTPUT"
+            if ! sha=$(gh api "repos/fanchmwrt/fanchmwrt/commits/$branch" --jq .sha 2>/dev/null); then
+              echo "::warning::upstream branch '$branch' not found (series $series); skipping"
+              continue
+            fi
+            short=${sha:0:8}
+            tag="n1-$series-$(date -u +%Y%m%d)-$short"
+            echo "series=$series branch=$branch upstream=$sha tag=$tag"
+
+            if gh release list --repo "$GITHUB_REPOSITORY" --limit 200 \
+                 --json tagName --jq '.[].tagName' \
+               | grep -qE "^n1-$series-.*-$short\$"; then
+              echo "  already released for $short -> skip"
+              continue
+            fi
+
+            echo "  queued"
+            matrix=$(jq -c \
+              --arg s "$series" --arg b "$branch" --arg t "$tag" \
+              '. + [{series: $s, branch: $b, tag: $t}]' <<< "$matrix")
+            count=$((count + 1))
+          done <<< "$N1_VERSIONS"
+
+          echo "matrix=$matrix"  >> "$GITHUB_OUTPUT"
+          echo "count=$count"    >> "$GITHUB_OUTPUT"
+          echo "planned $count build(s): $matrix"
 
   build:
-    name: Build and release
-    needs: sync
-    if: needs.sync.outputs.changed == 'true'
+    name: Build ${{ matrix.series }}
+    needs: plan
+    if: needs.plan.outputs.count != '0'
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.plan.outputs.matrix) }}
     uses: ./.github/workflows/build-n1.yml
     with:
-      release_tag: ${{ needs.sync.outputs.tag }}
+      branch: ${{ matrix.branch }}
+      release_tag: ${{ matrix.tag }}
     secrets: inherit

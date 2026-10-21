@@ -1,16 +1,30 @@
 # Reusable build for Phicomm N1 firmware.
 # Author: 咖啡有毒你还喝！
+#
+# Version-agnostic: the OpenWrt branch to build is an input, so the same
+# workflow serves 25.12 today and any future series (24.10, 26.x, ...) once
+# a ported branch exists.
 name: Build N1 firmware
 
 on:
   workflow_dispatch:
     inputs:
+      branch:
+        description: "Ported branch to build"
+        required: false
+        default: "fanchmwrt-25.12.6"
+        type: string
       release_tag:
         description: "Release tag (leave empty to only upload artifacts)"
         required: false
         type: string
   workflow_call:
     inputs:
+      branch:
+        description: "Ported branch to build"
+        required: false
+        default: "fanchmwrt-25.12.6"
+        type: string
       release_tag:
         description: "Release tag (leave empty to only upload artifacts)"
         required: false
@@ -28,7 +42,26 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          ref: ${{ inputs.branch }}
           fetch-depth: 0
+
+      - name: Sync upstream
+        run: |
+          set -euo pipefail
+          BRANCH="${{ inputs.branch }}"
+          git remote add upstream https://github.com/fanchmwrt/fanchmwrt.git 2>/dev/null || true
+          if git fetch --no-tags upstream "$BRANCH" 2>/dev/null; then
+            if git merge-base --is-ancestor "upstream/$BRANCH" HEAD; then
+              echo "upstream/$BRANCH already merged into HEAD"
+            else
+              echo "merging upstream/$BRANCH into $BRANCH"
+              git config user.name "咖啡有毒你还喝！"
+              git config user.email "noreply@github.com"
+              git merge --no-edit "upstream/$BRANCH"
+            fi
+          else
+            echo "::warning::upstream branch $BRANCH not found; building the local branch as-is"
+          fi
 
       - name: Install dependencies
         run: |
@@ -56,6 +89,13 @@ jobs:
           CONFIG_TARGET_amlogic_mesongx_DEVICE_phicomm_n1=y
           CONFIG_PACKAGE_luci=y
           CONFIG_LUCI_LANG_zh_Hans=y
+          # Open-Box (package/open-box): prebuilt all-in-one proxy. Its payload
+          # unpacks to ~168 MiB under /opt/open-box, far beyond the default
+          # 104 MiB rootfs, so the rootfs partition grows to 1 GiB here. N1 has
+          # 8 GiB eMMC; the extra space also covers Open-Box's own updates
+          # (each staged release is ~76 MiB).
+          CONFIG_PACKAGE_open-box=y
+          CONFIG_TARGET_ROOTFS_PARTSIZE=1024
           CONFIG_KERNEL_KALLSYMS=y
           # Passed straight into the kernel .config by Kernel/Configure/Default
           # (the awk 'CONFIG_KERNEL_' -> 'CONFIG_' step), bypassing the
@@ -69,10 +109,12 @@ jobs:
           # If that value survives the kernel config merge, syncconfig
           # re-asks ARM64_PTR_AUTH and ARM64_PTR_AUTH_KERNEL becomes a NEW
           # symbol -> non-tty abort. Enable it at the generic layer.
-          sed -i 's/^# CONFIG_ARM64_PTR_AUTH is not set$/CONFIG_ARM64_PTR_AUTH=y/' target/linux/generic/config-6.12
-          echo "::notice::diagnostic config-6.12:"; grep "ARM64_PTR_AUTH" target/linux/amlogic/mesongx/config-6.12 || true
-          echo "::notice::diagnostic merged:"
-          scripts/kconfig.pl + + target/linux/generic/config-6.12 target/linux/amlogic/config-6.12 target/linux/amlogic/mesongx/config-6.12 | grep "ARM64_PTR_AUTH" || true
+          if [ -f target/linux/generic/config-6.12 ]; then
+            sed -i 's/^# CONFIG_ARM64_PTR_AUTH is not set$/CONFIG_ARM64_PTR_AUTH=y/' target/linux/generic/config-6.12
+            echo "::notice::diagnostic config-6.12:"; grep "ARM64_PTR_AUTH" target/linux/amlogic/mesongx/config-6.12 || true
+            echo "::notice::diagnostic merged:"
+            scripts/kconfig.pl + + target/linux/generic/config-6.12 target/linux/amlogic/config-6.12 target/linux/amlogic/mesongx/config-6.12 | grep "ARM64_PTR_AUTH" || true
+          fi
 
       - name: Build image
         run: |
@@ -90,8 +132,8 @@ jobs:
             LINUX_DIR=$(ls -d build_dir/target-*/linux-amlogic_mesongx/linux-* 2>/dev/null | head -1)
             echo "::notice::first build rc=$rc, LINUX_DIR=$LINUX_DIR"
             if [ -n "$LINUX_DIR" ] && [ -f "$LINUX_DIR/.config" ]; then
-              echo "::notice::filling 6.12 NEW symbols with olddefconfig"
-                        make -C "$LINUX_DIR" ARCH=arm64 olddefconfig || { echo "::error::olddefconfig failed"; exit $rc; }
+              echo "::notice::filling NEW symbols with olddefconfig"
+              make -C "$LINUX_DIR" ARCH=arm64 olddefconfig || { echo "::error::olddefconfig failed"; exit $rc; }
               # Second pass: ARM64_PTR_AUTH_KERNEL is gated on ARM64_PTR_AUTH;
               # one pass processes the dependent symbol before the dependency
               # settles and drops it again. Re-run now that ARM64_PTR_AUTH=y.
@@ -135,7 +177,7 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ inputs.release_tag }}
-          name: fanchmwrt 25.12.6 · Phicomm N1 · ${{ inputs.release_tag }}
+          name: Phicomm N1 · ${{ inputs.branch }} · ${{ inputs.release_tag }}
           draft: false
           prerelease: true
           body: |
@@ -143,8 +185,8 @@ jobs:
 
             **Author: 咖啡有毒你还喝！**
 
+            - Branch: `${{ inputs.branch }}`
             - Target: `amlogic/mesongx`, device `phicomm_n1`
-            - Kernel: 6.12.112
             - Images: squashfs / ext4 sysupgrade (flash to SD card first, then install to eMMC)
 
             > Not hardware-tested by CI. Verify boot before writing to eMMC.
