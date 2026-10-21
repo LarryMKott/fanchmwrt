@@ -24,20 +24,23 @@ PKG_RELEASE:=1
 
 OPENBOX_REPO:=liandu2024/Open-Box
 
-# 上游 asset 命名：open-box-v<version>-linux-{arm64,x64}.tar.gz
+# 上游完整发布包命名：open-box-linux-{arm64,x64}.tar.gz（不带版本号；
+# 带版本号的只有 -app / -geo / -docker 等变体，别拿错）。
 # 目前只支持这两种架构，其它架构在 Build/Prepare 里明确报错，避免装进去一个跑不起来的镜像。
 ifeq ($(ARCH),aarch64)
   OPENBOX_ASSET:=arm64
+  OPENBOX_HASH:=09454da9b3e918387616996a5515f1c32061bb2fc1b6b24de7d5aacd71cf6952
 else ifeq ($(ARCH),x86_64)
   OPENBOX_ASSET:=x64
+  OPENBOX_HASH:=fa05a4c1b74d4e5db2458c0df2f23802a83c9c460c1df1dd332ac0b56597e1ae
 else
   OPENBOX_ASSET:=
 endif
 
 ifneq ($(OPENBOX_ASSET),)
-  PKG_SOURCE:=open-box-v$(PKG_VERSION)-linux-$(OPENBOX_ASSET).tar.gz
+  PKG_SOURCE:=open-box-linux-$(OPENBOX_ASSET).tar.gz
   PKG_SOURCE_URL:=https://github.com/$(OPENBOX_REPO)/releases/download/v$(PKG_VERSION)
-  PKG_HASH:=09454da9b3e918387616996a5515f1c32061bb2fc1b6b24de7d5aacd71cf6952
+  PKG_HASH:=$(OPENBOX_HASH)
   # 发布包没有顶层目录（tar 根就是 bin/ node/ panel/ openwrt/ ...），默认 PKG_UNPACK
   # 会把内容解到 $(BUILD_DIR) 而不是 $(PKG_BUILD_DIR)，所以自己指定解包目录。
   PKG_UNPACK:=$(HOST_TAR) -xzf $(DL_DIR)/$(PKG_SOURCE) -C $(PKG_BUILD_DIR)
