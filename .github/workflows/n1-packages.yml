@@ -1,0 +1,36 @@
+name: Build N1 packages
+
+# 针对 Phicomm N1（amlogic/mesongx, arm64）的独立包检查 + 构建。
+# 上游 openwrt/actions-shared-workflows 的 packages.yml 只跑 malta/be 和
+# x86/64，不覆盖 amlogic/mesongx；open-box 之类的 arm64-only 包因此在
+# 通用 CI 里永远走不到，只能靠这个 workflow 兜住。
+
+on:
+  push:
+    paths:
+      - '.github/workflows/n1-packages.yml'
+      - 'package/**'
+      - 'target/linux/amlogic/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build-n1-packages:
+    name: Check and build packages for amlogic/mesongx
+    permissions:
+      contents: read
+      packages: read
+      actions: write
+    uses: openwrt/actions-shared-workflows/.github/workflows/reusable_build.yml@main
+    with:
+      target: amlogic
+      subtarget: mesongx
+      build_full: true
+      check: true
+      include_feeds: true
