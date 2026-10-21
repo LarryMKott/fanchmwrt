@@ -65,9 +65,17 @@ jobs:
             if [ -n "$LINUX_DIR" ] && [ -f "$LINUX_DIR/.config" ]; then
               echo "::notice::filling 6.12 NEW symbols with olddefconfig"
               make -C "$LINUX_DIR" ARCH=arm64 olddefconfig || { echo "::error::olddefconfig failed"; exit $rc; }
+              echo "::notice::diagnostics: ARM64_PTR_AUTH in filled .config:"
+              grep "ARM64_PTR_AUTH" "$LINUX_DIR/.config" || echo "(none)"
               grep -E '^(CONFIG_|# CONFIG_)' "$LINUX_DIR/.config" \
                 | grep -vE '^(# )?CONFIG_(KERNEL_|INITRAMFS)' \
                 > target/linux/amlogic/mesongx/config-6.12
+              echo "::notice::diagnostics: ARM64_PTR_AUTH in config-6.12:"
+              grep "ARM64_PTR_AUTH" target/linux/amlogic/mesongx/config-6.12 || echo "(none)"
+              # Force Kernel/Configure to rebuild .config from the now-filled
+              # subtarget file; otherwise the stale .config.prev makes Configure
+              # skip the copy and the old (incomplete) .config is reused.
+              rm -f "$LINUX_DIR/.configured" "$LINUX_DIR/.config.prev"
               echo "::notice::retrying build with normalized kernel config"
               make -j$(nproc)
               rc=$?
