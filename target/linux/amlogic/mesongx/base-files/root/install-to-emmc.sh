@@ -20,14 +20,102 @@ function umount_disk() {
 	return 0
 }
 
+# Convert a user-supplied size to MiB.
+#   61440 -> 61440 (MiB) | 60G / 60GB -> 61440 | 500M / 500MB -> 500 | 100% -> whole disk
+parse_mib() {
+	local v="$1" disk_mib="$2"
+	case "$v" in
+		*%)	echo "$disk_mib"; return ;;
+	esac
+	echo "$v" | awk '
+		{
+			unit = ""
+			n = $0
+			if (n ~ /[Gg]/) unit = "G"
+			else if (n ~ /[Mm]/) unit = "M"
+			gsub(/[^0-9.].*/, "", n)
+			if (n == "") { print ""; exit }
+			if (unit == "G") n = n * 1024
+			printf "%d\n", n
+		}'
+}
+
 function part_disk() {
 	local to="${1#/dev/}"
+	local disk_mib p2_end p3_end p3_spec ans v
+
+	# Disk capacity in MiB (blockdev first, parted as fallback).
+	disk_mib=$(blockdev --getsize64 "/dev/$to" 2>/dev/null)
+	if [ -n "$disk_mib" ]; then
+		disk_mib=$((disk_mib / 1048576))
+	else
+		disk_mib=$(parted -ms "/dev/$to" unit MiB print 2>/dev/null \
+			| sed -n 's/^\/dev\/[^:]*:\([0-9]*\)MiB:.*/\1/p' | head -1)
+	fi
+	if [ -z "$disk_mib" ] || [ "$disk_mib" -le 0 ]; then
+		echo "Unable to determine size of /dev/$to" >&2
+		return 1
+	fi
+
+	# Default layout: p3 takes the rest of the disk.
+	p2_end=388
+	p3_end=$disk_mib
+
+	echo ""
+	echo "eMMC /dev/$to: ${disk_mib} MiB ($((disk_mib / 1024)) GiB)"
+	echo ""
+	echo "  #  start      end        size      role"
+	echo "  1   68 MiB   132 MiB     64 MiB   boot: u-boot.emmc, kernel, dtb (fixed)"
+	echo "  2  132 MiB  ${p2_end} MiB   $((p2_end - 132)) MiB  rootfs: squashfs, read-only"
+	echo "  3  764 MiB  ${p3_end} MiB   $((p3_end - 764)) MiB  overlay: all writable data"
+	echo ""
+	echo -n "Use this default layout? [Y/n] "
+	read ans
+
+	if [ "$ans" = n ] || [ "$ans" = N ]; then
+		echo -n "  p2 rootfs end (MiB, >=388) [388]: "
+		read v
+		[ -n "$v" ] && p2_end=$(parse_mib "$v" "$disk_mib")
+		echo -n "  p3 overlay end (MiB / G / GB / % ) [100%]: "
+		read v
+		[ -n "$v" ] && p3_end=$(parse_mib "$v" "$disk_mib")
+	fi
+
+	[ -z "$p2_end" ] && p2_end=388
+	[ -z "$p3_end" ] && p3_end=$disk_mib
+
+	if [ "$p2_end" -lt 388 ]; then
+		echo "ERROR: p2 end must be >= 388 MiB (rootfs needs 256 MiB)" >&2
+		return 1
+	fi
+	if [ "$p3_end" -le 764 ]; then
+		echo "ERROR: p3 end must be > 764 MiB" >&2
+		return 1
+	fi
+	if [ "$p3_end" -gt "$disk_mib" ]; then
+		echo "ERROR: p3 end ($p3_end MiB) exceeds disk ($disk_mib MiB)" >&2
+		return 1
+	fi
+
+	# Let parted own the last-sector alignment when filling the disk.
+	if [ "$p3_end" -eq "$disk_mib" ]; then
+		p3_spec="100%"
+	else
+		p3_spec="${p3_end}MiB"
+	fi
+
+	echo ""
+	echo "Creating partitions:"
+	echo "  p1  68 MiB -> 132 MiB"
+	echo "  p2 132 MiB -> ${p2_end} MiB"
+	echo "  p3 764 MiB -> ${p3_spec}"
+
 	dd if=/dev/zero of="/dev/$to" bs=512 count=1 conv=notrunc 2>/dev/null
 	parted --script "/dev/$to" \
 		mktable msdos \
 		mkpart primary 68MiB 132MiB \
-		mkpart primary 132MiB 388MiB \
-		mkpart primary 764MiB 2812MiB
+		mkpart primary 132MiB "${p2_end}MiB" \
+		mkpart primary 764MiB "${p3_spec}"
 }
 
 function get_bootdisk() {
