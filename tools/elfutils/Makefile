@@ -120,11 +120,10 @@ HOST_CONFIGURE_VARS += \
 	ac_cv_buildid=yes
 
 define Host/Elfutils/FixObstack
-	# gnulib's obstack.h has a bare "#if" that expands to nothing on
-	# newer host GCC -> "error: #if with no expression". Bootstrap
-	# (Host/Gnulib/Prepare) recreates it, so patch it right after that.
-	# Uses python3: sed's "$" anchor gets mangled by make's $ expansion.
-	python3 -c 'import sys,re; p=sys.argv[1]; s=open(p).read(); open(p,"w").write(re.sub(r"(?m)^#if\s*$", "#if 1", s))' $(HOST_BUILD_DIR)/libgnu/obstack.h || true ;
+	# gnulib's obstack.h line 143 is a bare "#if" -> gcc "error: #if with
+	# no expression". Line-addressed sed avoids the Makefile $ / quoting
+	# pitfalls that broke the previous patterns.
+	sed -i '143c #if 1' $(HOST_BUILD_DIR)/libgnu/obstack.h || true ;
 endef
 
 Hooks/HostConfigure/Pre := Host/Gnulib/Prepare Host/Elfutils/FixObstack $(Hooks/HostConfigure/Pre)
