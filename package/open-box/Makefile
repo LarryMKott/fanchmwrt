@@ -43,7 +43,9 @@ ifneq ($(OPENBOX_ASSET),)
   PKG_HASH:=$(OPENBOX_HASH)
   # 发布包没有顶层目录（tar 根就是 bin/ node/ panel/ openwrt/ ...），默认 PKG_UNPACK
   # 会把内容解到 $(BUILD_DIR) 而不是 $(PKG_BUILD_DIR)，所以自己指定解包目录。
-  PKG_UNPACK:=$(HOST_TAR) -xzf $(DL_DIR)/$(PKG_SOURCE) -C $(PKG_BUILD_DIR)
+  # 必须用延迟展开 `=`：HOST_TAR / DL_DIR / PKG_BUILD_DIR 都在下面的 package.mk 里
+  # 才定义，这里若用 `:=` 会在定义时就展开成空字符串，导致根本不解包。
+  PKG_UNPACK=$(HOST_TAR) -xzf $(DL_DIR)/$(PKG_SOURCE) -C $(PKG_BUILD_DIR)
 endif
 
 PKG_LICENSE:=Proprietary
@@ -74,8 +76,12 @@ define Build/Prepare
 	@test -n "$(OPENBOX_ASSET)" || { \
 		echo "*** open-box: 上游只提供 aarch64 / x86_64 预编译包，当前 ARCH=$(ARCH) ***"; \
 		exit 1; }
+	rm -rf $(PKG_BUILD_DIR)
 	mkdir -p $(PKG_BUILD_DIR)
 	$(PKG_UNPACK)
+	@test -d $(PKG_BUILD_DIR)/bin || { \
+		echo "*** open-box: unpack produced no bin/, contents: ***"; \
+		ls -la $(PKG_BUILD_DIR); exit 1; }
 endef
 
 # 预编译包，没有编译步骤。
