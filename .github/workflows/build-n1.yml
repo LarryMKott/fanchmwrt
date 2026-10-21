@@ -44,6 +44,12 @@ jobs:
           CONFIG_PACKAGE_luci=y
           CONFIG_LUCI_LANG_zh_Hans=y
           CONFIG_KERNEL_KALLSYMS=y
+          # Passed straight into the kernel .config by Kernel/Configure/Default
+          # (the awk 'CONFIG_KERNEL_' -> 'CONFIG_' step), bypassing the
+          # kconfig.pl merge where generic/config-6.12's
+          # "# CONFIG_ARM64_PTR_AUTH is not set" can shadow the subtarget.
+          CONFIG_KERNEL_ARM64_PTR_AUTH=y
+          CONFIG_KERNEL_ARM64_PTR_AUTH_KERNEL=y
           EOF
           make defconfig
 
