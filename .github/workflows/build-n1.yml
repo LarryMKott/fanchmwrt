@@ -1,7 +1,20 @@
+# Reusable build for Phicomm N1 firmware.
+# Author: 咖啡有毒你还喝！
 name: Build N1 firmware
 
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag (leave empty to only upload artifacts)"
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      release_tag:
+        description: "Release tag (leave empty to only upload artifacts)"
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -117,10 +130,25 @@ jobs:
             !bin/targets/amlogic/mesongx/*.manifest
           if-no-files-found: error
 
-      - name: Release (draft, on tag v*)
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Release
+        if: ${{ inputs.release_tag != '' }}
         uses: softprops/action-gh-release@v3
         with:
-          draft: true
+          tag_name: ${{ inputs.release_tag }}
+          name: fanchmwrt 25.12.6 · Phicomm N1 · ${{ inputs.release_tag }}
+          draft: false
           prerelease: true
-          files: bin/targets/amlogic/mesongx/*
+          body: |
+            Automatic build of Phicomm N1 (Amlogic S905D / meson-gxl) firmware.
+
+            **Author: 咖啡有毒你还喝！**
+
+            - Target: `amlogic/mesongx`, device `phicomm_n1`
+            - Kernel: 6.12.112
+            - Images: squashfs / ext4 sysupgrade (flash to SD card first, then install to eMMC)
+
+            > Not hardware-tested by CI. Verify boot before writing to eMMC.
+          files: |
+            bin/targets/amlogic/mesongx/*.img.gz
+            bin/targets/amlogic/mesongx/sha256sums
+            bin/targets/amlogic/mesongx/profiles.json
