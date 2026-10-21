@@ -52,6 +52,14 @@ jobs:
           CONFIG_KERNEL_ARM64_PTR_AUTH_KERNEL=y
           EOF
           make defconfig
+          # generic/config-6.12 ships "# CONFIG_ARM64_PTR_AUTH is not set".
+          # If that value survives the kernel config merge, syncconfig
+          # re-asks ARM64_PTR_AUTH and ARM64_PTR_AUTH_KERNEL becomes a NEW
+          # symbol -> non-tty abort. Enable it at the generic layer.
+          sed -i 's/^# CONFIG_ARM64_PTR_AUTH is not set$/CONFIG_ARM64_PTR_AUTH=y/' target/linux/generic/config-6.12
+          echo "::notice::diagnostic config-6.12:"; grep "ARM64_PTR_AUTH" target/linux/amlogic/mesongx/config-6.12 || true
+          echo "::notice::diagnostic merged:"
+          scripts/kconfig.pl + + target/linux/generic/config-6.12 target/linux/amlogic/config-6.12 target/linux/amlogic/mesongx/config-6.12 | grep "ARM64_PTR_AUTH" || true
 
       - name: Build image
         run: |
