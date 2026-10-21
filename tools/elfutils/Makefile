@@ -119,7 +119,14 @@ HOST_CONFIGURE_VARS += \
 	ac_cv_search__obstack_free=yes \
 	ac_cv_buildid=yes
 
-Hooks/HostConfigure/Pre := Host/Gnulib/Prepare $(Hooks/HostConfigure/Pre)
+define Host/Elfutils/FixObstack
+	# gnulib's obstack.h has a bare "#if" that expands to nothing on
+	# newer host GCC -> "error: #if with no expression". Bootstrap
+	# (Host/Gnulib/Prepare) recreates it, so patch it right after that.
+	sed -i 's/^#if$$/#if 1/' $(HOST_BUILD_DIR)/libgnu/obstack.h || true
+endef
+
+Hooks/HostConfigure/Pre := Host/Gnulib/Prepare Host/Elfutils/FixObstack $(Hooks/HostConfigure/Pre)
 Hooks/HostCompile/Pre := Host/Gnulib/Compile $(Hooks/HostCompile/Pre)
 
 define Host/Configure
