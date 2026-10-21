@@ -56,6 +56,10 @@ endef
 define Host/Prepare
 	$(call Host/Prepare/Default)
 	$(if $(QUILT),,$(call Host/Bootstrap))
+	# gnulib's obstack.h has a bare "#if" whose condition macro expands to
+	# nothing on newer host GCC -> "error: #if with no expression".
+	# Bootstrap (re)creates the file, so patch it here, before configure/compile.
+	sed -i 's/^#if$$/#if 1/' $(HOST_BUILD_DIR)/lib/obstack.h || true
 endef
 
 define Host/Configure
@@ -64,10 +68,6 @@ define Host/Configure
 	$(call Host/Configure/Default)
 	$(call Host/Uninstall)
 	$(call Host/Compile/Default,lib/config.h)
-	# gnulib's obstack.h has a bare "#if" whose condition macro expands to
-	# nothing on newer host GCC -> "error: #if with no expression".
-	# Neutralise the empty directive before the real compile.
-	sed -i 's/^#if$$/#if 1/' $(HOST_BUILD_DIR)/lib/obstack.h
 endef
 
 define Host/Install
